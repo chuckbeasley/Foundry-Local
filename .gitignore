@@ -27,3 +27,5 @@ Cargo.lock
 bin/
 obj/
 /src/cs/samples/ConsoleClient/test.http
+
+.fake
