@@ -1,8 +1,8 @@
 <div align="center">
   <picture align="center">
-    <source media="(prefers-color-scheme: dark)" srcset="media/icons/ai_studio_icon_white.svg">
-    <source media="(prefers-color-scheme: light)" srcset="media/icons/ai_studio_icon_black.svg">
-    <img alt="AI Foundry icon." src="media/icons/ai_studio_icon_black.svg" height="100" style="max-width: 100%;">
+    <source media="(prefers-color-scheme: dark)" srcset="media/icons/foundry_local_white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="media/icons/foundry_local_black.svg">
+    <img alt="AI Foundry icon." src="media/icons/foundry_local_black.svg" height="100" style="max-width: 100%;">
   </picture>
 <div id="user-content-toc">
   <ul align="center" style="list-style: none;">
@@ -26,18 +26,18 @@ Foundry Local brings the power of Azure AI Foundry to your local device **withou
 ## 🚀 Quickstart
 
 1. **Install Foundry Local:**
-    - **Windows**: Download the Foundry Local installer for your architecture (x64 or arm64):
-    
-        - [Windows x64 Installer](https://github.com/microsoft/Foundry-Local/releases/download/v0.4.91/FoundryLocal-x64-0.4.91.9885.msix)
-        - [Windows arm64 Installer](https://github.com/microsoft/Foundry-Local/releases/download/v0.4.91/FoundryLocal-arm64-0.4.91.9885.msix)
-      
-      Next, open the installer and follow the on-screen instructions to complete the installation.
-    - **MacOS**: Open a terminal and run the following command:
-        ```bash
-        brew tap microsoft/foundrylocal
-        brew install foundrylocal
-        ```
-      Alternatively, you can download the macOS installer from the [releases page](https://github.com/microsoft/Foundry-Local/releases) and follow the on-screen installation instructions.
+
+   - **Windows**: Install Foundry Local for your architecture (x64 or arm64):
+
+     ```bash
+       winget install Microsoft.FoundryLocal
+     ```
+
+- **MacOS**: Open a terminal and run the following command:
+  `bash
+    brew install microsoft/foundrylocal/foundrylocal
+    `
+  Alternatively, you can download the installers from the [releases page](https://github.com/microsoft/Foundry-Local/releases) and follow the on-screen installation instructions.
 
 > [!TIP]
 > For any issues, refer to the [Installation section](#installing) below.
@@ -51,7 +51,7 @@ Foundry Local brings the power of Azure AI Foundry to your local device **withou
 > [!NOTE]
 > The `foundry model run <model>` command will automatically download the model if it's not already cached on your local machine, and then start an interactive chat session with the model.
 
-Foundry Local will automatically select and download a model *variant* with the best performance for your hardware. For example:
+Foundry Local will automatically select and download a model _variant_ with the best performance for your hardware. For example:
 
 - if you have an Nvidia CUDA GPU, it will download the CUDA-optimized model.
 - if you have a Qualcomm NPU, it will download the NPU-optimized model.
@@ -69,7 +69,107 @@ This will show you a list of all models that can be run locally, including their
 
 ## 🧑‍💻 Integrate with your applications using the SDK
 
-Foundry Local has an easy-to-use SDK (Python, JavaScript) to get you started with existing applications:
+Foundry Local has an easy-to-use SDK (C#, Python, JavaScript) to get you started with existing applications:
+
+### C#
+
+The C# SDK is available as a package on NuGet. You can install it using the .NET CLI:
+
+```bash
+dotnet add package Microsoft.AI.Foundry.Local.WinML
+```
+
+> [!TIP]
+> The C# SDK does not require end users to have Foundry Local CLI installed. It is a completely self-contained SDK that will does not depend on any external services. Also, the C# SDK has native in-process Chat Completions and Audio Transcription APIs that do not require HTTP calls to the local Foundry service.
+
+Here is an example of using the C# SDK to run a model and generate a chat completion:
+
+```csharp
+using Microsoft.AI.Foundry.Local;
+using Betalgo.Ranul.OpenAI.ObjectModels.RequestModels;
+using Microsoft.Extensions.Logging;
+
+CancellationToken ct = new CancellationToken();
+
+var config = new Configuration
+{
+    AppName = "my-app-name",
+    LogLevel = Microsoft.AI.Foundry.Local.LogLevel.Debug
+};
+
+using var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
+});
+var logger = loggerFactory.CreateLogger<Program>();
+
+// Initialize the singleton instance.
+await FoundryLocalManager.CreateAsync(config, logger);
+var mgr = FoundryLocalManager.Instance;
+
+// Get the model catalog
+var catalog = await mgr.GetCatalogAsync();
+
+// List available models
+Console.WriteLine("Available models for your hardware:");
+var models = await catalog.ListModelsAsync();
+foreach (var availableModel in models)
+{
+    foreach (var variant in availableModel.Variants)
+    {
+        Console.WriteLine($"  - Alias: {variant.Alias} (Id: {string.Join(", ", variant.Id)})");
+    }
+}
+
+// Get a model using an alias
+var model = await catalog.GetModelAsync("qwen2.5-0.5b") ?? throw new Exception("Model not found");
+
+
+// is model cached
+Console.WriteLine($"Is model cached: {await model.IsCachedAsync()}");
+
+// print out cached models
+var cachedModels = await catalog.GetCachedModelsAsync();
+Console.WriteLine("Cached models:");
+foreach (var cachedModel in cachedModels)
+{
+    Console.WriteLine($"- {cachedModel.Alias} ({cachedModel.Id})");
+}
+
+// Download the model (the method skips download if already cached)
+await model.DownloadAsync(progress =>
+{
+    Console.Write($"\rDownloading model: {progress:F2}%");
+    if (progress >= 100f)
+    {
+        Console.WriteLine();
+    }
+});
+
+// Load the model
+await model.LoadAsync();
+
+// Get a chat client
+var chatClient = await model.GetChatClientAsync();
+
+// Create a chat message
+List<ChatMessage> messages = new()
+{
+    new ChatMessage { Role = "user", Content = "Why is the sky blue?" }
+};
+
+var streamingResponse = chatClient.CompleteChatStreamingAsync(messages, ct);
+await foreach (var chunk in streamingResponse)
+{
+    Console.Write(chunk.Choices[0].Message.Content);
+    Console.Out.Flush();
+}
+Console.WriteLine();
+
+// Tidy up - unload the model
+await model.UnloadAsync();
+```
+
 
 ### Python
 
@@ -83,18 +183,17 @@ pip install openai
 > [!TIP]
 > We recommend using a virtual environment such as `conda` or `venv` to avoid conflicts with other packages.
 
-
 Foundry Local provides an OpenAI-compatible API that you can call from any application:
 
 ```python
 import openai
 from foundry_local import FoundryLocalManager
 
-# By using an alias, the most suitable model will be downloaded 
+# By using an alias, the most suitable model will be downloaded
 # to your end-user's device.
 alias = "phi-3.5-mini"
 
-# Create a FoundryLocalManager instance. This will start the Foundry 
+# Create a FoundryLocalManager instance. This will start the Foundry
 # Local service if it is not already running and load the specified model.
 manager = FoundryLocalManager(alias)
 
@@ -132,20 +231,20 @@ npm install openai
 import { OpenAI } from "openai";
 import { FoundryLocalManager } from "foundry-local-sdk";
 
-// By using an alias, the most suitable model will be downloaded 
+// By using an alias, the most suitable model will be downloaded
 // to your end-user's device.
-// TIP: You can find a list of available models by running the 
+// TIP: You can find a list of available models by running the
 // following command in your terminal: `foundry model list`.
 const alias = "phi-3.5-mini";
 
-// Create a FoundryLocalManager instance. This will start the Foundry 
+// Create a FoundryLocalManager instance. This will start the Foundry
 // Local service if it is not already running.
-const foundryLocalManager = new FoundryLocalManager()
+const foundryLocalManager = new FoundryLocalManager();
 
-// Initialize the manager with a model. This will download the model 
+// Initialize the manager with a model. This will download the model
 // if it is not already present on the user's device.
-const modelInfo = await foundryLocalManager.init(alias)
-console.log("Model Info:", modelInfo)
+const modelInfo = await foundryLocalManager.init(alias);
+console.log("Model Info:", modelInfo);
 
 const openai = new OpenAI({
   baseURL: foundryLocalManager.endpoint,
@@ -153,19 +252,19 @@ const openai = new OpenAI({
 });
 
 async function streamCompletion() {
-    const stream = await openai.chat.completions.create({
-      model: modelInfo.id,
-      messages: [{ role: "user", content: "What is the golden ratio?" }],
-      stream: true,
-    });
-  
-    for await (const chunk of stream) {
-      if (chunk.choices[0]?.delta?.content) {
-        process.stdout.write(chunk.choices[0].delta.content);
-      }
+  const stream = await openai.chat.completions.create({
+    model: modelInfo.id,
+    messages: [{ role: "user", content: "What is the golden ratio?" }],
+    stream: true,
+  });
+
+  for await (const chunk of stream) {
+    if (chunk.choices[0]?.delta?.content) {
+      process.stdout.write(chunk.choices[0].delta.content);
     }
+  }
 }
-  
+
 streamCompletion();
 ```
 
@@ -203,11 +302,11 @@ Add-AppxPackage .\FoundryLocal.msix -DependencyPath .\VcLibs.appx
 If you're having problems installing Foundry, please [file an issue](https://github.com/microsoft/foundry-local/issues)
 and include logs using one of these methods:
 
-* For WinGet - use `winget install Microsoft.FoundryLocal --logs --verbose` - select the most-recently-dated log file
+- For WinGet - use `winget install Microsoft.FoundryLocal --logs --verbose` - select the most-recently-dated log file
   and attach it to the issue.
-* For `Add-AppxPackage` - immediately after it indicates an error, in an elevated PowerShell instance, use
+- For `Add-AppxPackage` - immediately after it indicates an error, in an elevated PowerShell instance, use
   `Get-MsixLogs | Out-File MsixLogs.txt` and attach it to the issue.
-* Use [Windows Feedback Hub](feedback-hub:) and create a Problem in the "Apps > All other apps" category. Use the
+- Use [Windows Feedback Hub](feedback-hub:) and create a Problem in the "Apps > All other apps" category. Use the
   "Add More Details > Recreate my problem" and re-run the failing commands to collect more data. Once your feedback
   is submitted, use the "Share" option to generate a link and put that into the filed issue.
 
@@ -217,11 +316,10 @@ and include logs using one of these methods:
 
 #### macOS
 
-Install Foundry Local using the following commands in your terminal:
+Install Foundry Local using the following command in your terminal:
 
 ```bash
-brew tap microsoft/foundrylocal
-brew install foundrylocal
+brew install microsoft/foundrylocal/foundrylocal
 ```
 
 Alternatively, you can also manually download and install the packages by following these steps:
@@ -239,6 +337,7 @@ Alternatively, you can also manually download and install the packages by follow
 To upgrade Foundry Local, run the following command in your terminal:
 
 - **Windows**
+
   ```bash
   winget upgrade --id Microsoft.FoundryLocal
   ```
@@ -255,12 +354,15 @@ To upgrade Foundry Local, run the following command in your terminal:
   Then, follow the [installation instructions](#installing) to install the latest version.
 
 ### Uninstalling
+
 To uninstall Foundry Local, run the following command in your terminal:
 
 - **Windows**: You can uninstall Foundry Local using `winget` in a Windows console (PowerShell, cmd, etc.):
+
   ```bash
   winget uninstall Microsoft.FoundryLocal
   ```
+
   Alternatively, you can also uninstall Foundry Local by navigating to **Settings > Apps > Apps & features** in Windows, finding "Foundry Local" in the list, and selecting the ellipsis (`...`) followed by **Uninstall**.
 
 - **macOS**: If you installed Foundry Local using Homebrew, you can uninstall it with the following command:
@@ -281,7 +383,7 @@ To uninstall Foundry Local, run the following command in your terminal:
 - **High performance** - Optimized execution with ONNX Runtime and hardware acceleration
 - **Flexible deployment** - Ideal for edge computing scenarios with limited connectivity
 - **Development friendly** - Perfect for prototyping AI features before production deployment
-- **Model versatility** - Use pre-compiled models or [convert your own](./docs/how-to/compile-models-for-foundry-local.md).
+- **Model versatility** - Use pre-compiled models or [convert your own](https://learn.microsoft.com/azure/ai-foundry/foundry-local/how-to/how-to-compile-hugging-face-models?view=foundry-classic&tabs=Bash).
 
 ## Reporting Issues
 
@@ -289,11 +391,8 @@ We're actively looking for feedback during this preview phase. Please report iss
 
 ## 🎓 Learn
 
-- [Detailed documentation](./docs/README.md)
-- [CLI reference](./docs/reference/reference-cli.md)
-- [REST API reference](./docs/reference/reference-rest.md)
-- [Security and privacy](./docs/reference/reference-security-privacy.md)
-- [Troubleshooting guide](./docs/reference/reference-troubleshooting.md)
+- [Foundry Local Documentation on Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-local/?view=foundry-classic)
+- [Troubleshooting guide](https://learn.microsoft.com/azure/ai-foundry/foundry-local/reference/reference-best-practice?view=foundry-classic)
 
 ## ⚖️ License
 
